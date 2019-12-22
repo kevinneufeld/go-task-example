@@ -1,0 +1,90 @@
+version: "2"
+
+vars:
+  PACKAGE: go-task-example
+  CURDIR:
+    sh: echo "$(PWD)"
+  GOPATH_VAR:
+    sh: echo "$(PWD)/.gopath"
+  GOEXE:
+    sh: which go
+  GOBIN: "{{.GOPATH_VAR}}/bin"
+  BASE: "{{.GOPATH_VAR}}/src/{{.PACKAGE}}"
+
+env:
+  TF_DATA_DIR: "./.terraform"
+  TF_CLI_ARGS_init: "-get-plugins=true"
+  GOBIN: "{{.GOBIN}}"
+  GOPATH: "{{.GOPATH_VAR}}"
+  PATH:
+    sh: echo "{{.GOBIN}}:$PATH"
+
+tasks:
+  go-exe:
+    desc: Is go installed
+    cmds:
+      - |
+        echo "You need to install GO lang"
+    status:
+      - test -f {{.GOEXE}}
+
+  go-bin-dep:
+    desc: Download and install Golang Dep
+    cmds:
+      - mkdir -p {{.GOBIN}}
+      - curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
+    status:
+      - test -f .gopath/bin/dep{{exeExt}}
+
+  base:
+    desc: "Create a symlink to of the current ./test/src to {{.BASE}}"
+    deps: [go-exe]
+    cmds:
+      - |
+        mkdir -p {{.GOPATH_VAR}}/src
+        ln -sf {{.CURDIR}} {{.BASE}}
+    status:
+      - test -d "{{.BASE}}"
+
+  base-vendor-init:
+    desc: Initialize Dep to create and download Terratest project dependecies of Gopkg.toml does not exists
+    dir: "{{.BASE}}"
+    deps: [go-bin-dep]
+    cmds:
+      - dep init
+    status:
+      - test -f "{{.BASE}}/Gopkg.toml"
+
+  base-vendor:
+    desc: Dep esure, downloads all require go dependecies
+    deps: [base, go-bin-dep]
+    dir: "{{.BASE}}"
+    cmds:
+      - |
+        echo ""
+        export PATH=$GOBIN:$PATH
+        echo "PATH='$PATH'"
+        echo ""
+        export GOPATH={{.GOPATH_VAR}}
+        echo "GOPATH='$GOPATH'"
+        echo ""
+        echo "PWD='$PWD'"
+        echo ""
+        #cd {{.BASE}}
+        dep ensure
+
+  init:
+    desc: Initialize terratest project environment
+    deps: [base-vendor]
+
+  test:
+    desc: Run tests
+    deps: [init]
+    dir: .gopath/src/terraform-windows-application-cluster
+    cmds:
+      - go test -v -timeout 30m -run TestExamplesComplete
+
+  clean:
+    desc: Cleans up all files and foders inorder to run terratest
+    cmds:
+      - "rm -rf ./.gopath/ ./vendor/ ./.terraform terraform.tfplan ../../examples/complete/terraform.tfstate ../../examples/complete/terraform.tfstate.backup"
